@@ -434,3 +434,30 @@ func TestHandleUpdateConfigurationSetsVersionAndError(t *testing.T) {
 		t.Fatal("expected error text in update result")
 	}
 }
+
+func TestRegistrationClientRegisterConnectionDuplicateIsRetryable(t *testing.T) {
+	t.Parallel()
+
+	server := &registrationTestServer{
+		registerCalls: make(chan registrationCall, 1),
+		unregisterCh:  make(chan struct{}, 1),
+		registerErr:   errors.New(control.DuplicateConnectionError),
+	}
+	client, cleanup := newRegistrationRPCClient(t, server)
+	defer cleanup()
+
+	_, err := client.RegisterConnection(context.Background(), protocol.TunnelAuth{}, uuid.New(), 0, control.BuildConnectionOptions(uuid.New(), nil, 0, nil))
+	retryErr, ok := err.(*protocol.RetryableError)
+	if !ok {
+		t.Fatalf("expected retryable error, got %T %v", err, err)
+	}
+	if retryErr.Error() != control.DuplicateConnectionError {
+		t.Fatalf("unexpected retry error %q", retryErr.Error())
+	}
+	if retryErr.Delay != 0 {
+		t.Fatalf("unexpected retry delay %v", retryErr.Delay)
+	}
+	if control.IsPermanentRegistrationError(err) {
+		t.Fatal("duplicate connection must not be permanent")
+	}
+}

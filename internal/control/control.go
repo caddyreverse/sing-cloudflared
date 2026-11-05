@@ -27,6 +27,11 @@ var ErrNonRemoteManagedTunnelUnsupported = E.New("cloudflared only supports remo
 
 var ErrUnauthorized = E.New("Unauthorized")
 
+// DuplicateConnectionError is the cause the edge returns when it still holds a
+// registration for this connector and connection index. cloudflared retries it
+// against another edge address regardless of the response's shouldRetry flag.
+const DuplicateConnectionError = "EDUPCONN"
+
 var NewRegistrationClient = func(ctx context.Context, stream io.ReadWriteCloser) RegistrationRPCClient {
 	return CreateRegistrationClient(ctx, stream)
 }
@@ -139,7 +144,7 @@ func (c *RegistrationClient) RegisterConnection(
 		} else {
 			registrationError = E.New(cause)
 		}
-		if resultError.ShouldRetry() {
+		if resultError.ShouldRetry() || cause == DuplicateConnectionError {
 			return nil, &protocol.RetryableError{
 				Err:   registrationError,
 				Delay: time.Duration(resultError.RetryAfter()),
